@@ -1,241 +1,250 @@
 ---
 name: ollama-qwen-setup
-description: Install Ollama and run Qwen3.8-27B locally, end to end - measure the machine's
-  VRAM, recommend the quantization that actually fits, download the GGUF plus the vision
-  projector, register the model, verify it runs fully on the GPU, and hand back a one-card
-  summary of how to call it. Use when the user asks to install Ollama, run Qwen locally,
-  set up a local LLM, or pick a GGUF quant for their hardware.
+description: Set up a local LLM with Ollama, end to end, sized to the user's machine - ask what it is
+  for, measure VRAM (or unified memory / RAM), offer two or three models that fit (Qwen to think
+  things through, Gemma for quick conversation; official versions first, reduced-refusal versions
+  only on request), install Ollama, download the chosen model, set the context window, verify it
+  really runs fast (not only "100% GPU"), show how to free the memory, and hand back a one-card
+  summary. Use when the user asks to install Ollama, run Qwen or Gemma locally, set up a local or
+  private AI, pick a model or GGUF quant for their hardware, or "use AI without internet".
 ---
 
-# Install Ollama + Qwen3.8-27B locally
+# Local LLM with Ollama, sized to your machine (Qwen and Gemma)
 
-Take a machine with nothing installed to a working local `qwen3.8-27b` the user can call from
-a terminal, an app, or the HTTP API. Nine steps. Do not skip the verification step - a model
-that silently spills onto the CPU is the single most common bad outcome, and it looks like
-success until the first prompt takes two minutes.
+Take a machine with nothing installed to a working local model the user can call from a terminal,
+an app or the HTTP API. Eleven steps. Do not skip step 9 - a model that silently overflows the
+card looks like success until the first answer takes minutes.
 
+**Talk to the user in their language.** This skill is in English; the person may not be.
 **Every path you show the user is absolute.** They will copy-paste it.
 
-## 0. Facts this skill is built on
+## Ground rules - ask before you act
 
-- Quants come from **`unsloth/Qwen3.8-27B-GGUF`** on Hugging Face (Apache-2.0). The `UD-` files
-  are Unsloth Dynamic quants - mixed precision per tensor, better quality per GB than the plain
-  `Q4_0` / `Q8_0` files at the same size. Prefer them.
-- Qwen3.8-27B is **multimodal**. Text works from the GGUF alone; images need
-  **`mmproj-BF16.gguf`** (~0.87 GB) alongside it. Always download both - it is small, and
-  retrofitting it later means re-registering the model.
-- `ollama create` **copies** the GGUF into Ollama's blob store. Budget **~2.2x the model size**
-  in free disk, or move the store first (step 4).
+- **Ask before** installing Ollama (show the exact command and what it does), before **each**
+  download (model name, source, size), before setting any environment variable, and before
+  removing anything. Never pipe a remote script into a shell without showing it first.
+- **Official sources only:** the Ollama library (`ollama.com/library`) or the model author's page
+  on Hugging Face. Third-party copies are a different file from a different person.
+- **Read the license** on the model card before the user relies on it for work. Qwen's text models
+  used here are Apache-2.0; other families have their own terms.
+- **Do not change driver or system settings** (for example NVIDIA's "CUDA - Sysmem Fallback Policy")
+  unless the user asks for it after you explained the trade-off.
+- Say what you measured and what you only read. Never write a speed you did not time.
 
-## 1. Check what is already there
+## 1. Ask what it is for
+
+Three short questions, then wait for the answers:
+
+1. **What will you use it for?** Short tasks (rewrite, summarize, translate, extract a list from an
+   email) or long reasoning (analysis, code, long documents)?
+2. **Do you need fewer refusals?** Only if the official model refuses legitimate work (for example
+   anonymised medical surveys or addiction research). Default: official versions. Modified
+   versions are an explicit opt-in (see `reference/models.md`).
+3. **Where should the models live?** Ask for an absolute folder on a drive with room. Do not
+   default it.
+
+## 2. Check what is already there
 
 ```bash
 ollama --version          # Windows fallback: & "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" --version
 ollama list
 ```
 
-If a `qwen3.8` model is already registered, say so and ask whether to reuse it, add another
-quant, or replace it. Do not silently re-download 17 GB.
+If a suitable model is already installed, say so and ask whether to reuse it. Do not silently
+re-download many gigabytes. Note that names differ: a library download appears as
+`qwen3.8:27b`, a hand-registered one may appear as `qwen3.8-27b:latest`. Always use the name the
+user's own `ollama list` prints.
 
-## 2. Measure the hardware
+## 3. Measure the machine
 
-NVIDIA (Windows or Linux):
+NVIDIA (Windows or Linux) - total and **already used** VRAM:
 
 ```bash
 nvidia-smi --query-gpu=name,memory.total,memory.used --format=csv,noheader
 ```
 
-AMD: `rocm-smi --showmeminfo vram`. Apple Silicon: `sysctl -n hw.memsize` and
-`system_profiler SPHardwareDataType | grep Chip` - unified memory, so usable budget is roughly
-**70% of total RAM**.
+The plain `nvidia-smi` also lists processes with their full paths; do not paste that part into
+anything public.
 
-Also read free disk on the drive the user will download to. If nothing reports a GPU, say
-plainly that this model will run on CPU at roughly 1-3 tokens/second and ask whether to
-continue or stop.
+- AMD: `rocm-smi --showmeminfo vram`.
+- Apple Silicon: `sysctl -n hw.memsize` and `system_profiler SPHardwareDataType | grep Chip`. Unified
+  memory: plan for model + context to use at most about 70% of it.
+- No GPU: it still works on the CPU, much slower. Say so and offer only the smallest options.
 
-Report one line: GPU name, total VRAM, VRAM already in use, free disk.
+Also read free disk on the target drive. Report one line: device, total memory, memory already in
+use, free disk. Keep RAM, VRAM and unified memory apart when you explain it: they are different
+things.
 
-## 3. Recommend a quant, then let the user choose
+## 4. Offer two or three options, then let the user choose
 
-Compute the budget:
+Use `reference/models.md`: rows by VRAM (8, 16, 24 GB), columns by use (think it through = Qwen,
+quick conversation = Gemma), official versions first. For each option give the exact name, the
+download size and one line of trade-off. Then ask which one - never decide alone.
 
-```
-usable VRAM = total VRAM - VRAM already in use - 1.0 GB (display/OS)
-weight budget = usable VRAM - 0.9 GB (mmproj) - 3.0 GB (KV cache at 32k context)
-```
+Say out loud:
 
-Pick from `reference/quants.md` the largest quant whose size is at or under the weight budget,
-and offer it plus the next size down as the safe option. Present **two or three** candidates
-with their sizes and a one-line trade-off each, then ask which one - never decide alone.
+- **File size is not total memory.** The context and the runtime need room on top, and other
+  applications already hold part of the card.
+- A **tight** option leaves no room for a second model and forces a small context.
+- Below Q3, quality drops sharply on reasoning and code; a smaller model at Q4 usually beats a big
+  one at Q2.
+- If they chose a modified (reduced-refusal) version: it may answer what the official one blocked,
+  and it may also be wrong more often on everything else; downloads are not quality (evidence and
+  caveats in `reference/models.md`).
 
-Reference points, using the whole card:
-
-| VRAM | Comfortable at 32k ctx | Tight but usually fits |
-|---|---|---|
-| 12 GB | `UD-Q2_K_XL` (9.2 GiB) | `UD-IQ3_XXS` (10.2 GiB) |
-| 16 GB | `UD-Q3_K_XL` (12.2 GiB) | `UD-IQ4_XS` (13.3 GiB) |
-| **24 GB** | **`UD-Q4_K_XL` (16.4 GiB)** | `UD-Q5_K_XL` (19.4 GiB) |
-| 32 GB | `UD-Q5_K_XL` (19.4 GiB) | `UD-Q6_K_L` (22.5 GiB) |
-| 48 GB+ | `UD-Q6_K_XL` (23.6 GiB) | `UD-Q8_K_XL` (29.3 GiB) |
-
-Sizes are from the Hub on 2026-09-03; the repo is re-quantized from time to time, so confirm
-the live size before quoting a download time:
-
-```bash
-curl -s "https://huggingface.co/api/models/unsloth/Qwen3.8-27B-GGUF?blobs=true" \
-  | python -c "import json,sys; [print(f\"{f['rfilename']:44s} {f.get('size',0)/2**30:6.2f} GiB\") for f in json.load(sys.stdin)['siblings'] if f['rfilename'].endswith('.gguf')]"
-```
-
-Two things to say out loud when the tight option is chosen: it leaves no room for a second
-model, and it forces `num_ctx` down. Below `Q3` quality degrades noticeably on reasoning - a
-smaller model at `Q4` usually beats this one at `Q2`.
-
-## 4. Ask where the models go
-
-Ask for an absolute folder. Do not default it. Good answers are a data drive with room, e.g.
-`E:\AI_models_opensource\qwen3.8-27b` or `/home/<user>/models/qwen3.8-27b`.
-
-If the system drive is short on space, set the blob store to the same drive **before**
-`ollama create`, and restart Ollama afterwards so it takes effect:
-
-```powershell
-# Windows, persistent
-[Environment]::SetEnvironmentVariable("OLLAMA_MODELS", "E:\ollama\models", "User")
-```
-
-```bash
-# Linux/macOS, persistent - add to the shell profile
-export OLLAMA_MODELS=/mnt/data/ollama/models
-```
+For a specific Unsloth quant with image input, use `reference/unsloth-custom-quant.md` instead of
+steps 7-8.
 
 ## 5. Install Ollama if missing
 
-- **Windows:** `winget install --id Ollama.Ollama -e`, or the installer from
-  <https://ollama.com/download>. Installs to
-  `C:\Users\<user>\AppData\Local\Programs\Ollama\ollama.exe` and adds itself to PATH -
-  a **new shell** is needed before `ollama` resolves.
-- **macOS:** `brew install ollama` then `brew services start ollama`, or the .dmg.
+The official commands (<https://ollama.com/download>):
+
+- **Windows (PowerShell):** `irm https://ollama.com/install.ps1 | iex` - or the installer
+  `OllamaSetup.exe` from the same page. It installs in the user's account without administrator
+  rights, to `C:\Users\<user>\AppData\Local\Programs\Ollama\`, and adds itself to PATH: open a
+  **new** terminal before `ollama` resolves.
+- **macOS:** `curl -fsSL https://ollama.com/install.sh | sh` - or `Ollama.dmg` from the same page.
 - **Linux:** `curl -fsSL https://ollama.com/install.sh | sh` (installs a systemd service).
-  Show the user the command and let them run it; do not pipe a remote script to a shell on
-  their behalf without saying what it does.
 
-Confirm with `ollama --version` in a fresh shell before continuing.
+Show the command, say what it does, and run it only after the user agrees (or let them run it).
+Confirm with `ollama --version` in a fresh terminal.
 
-## 6. Download the two files
+## 6. Optional: model folder and local-only mode
 
-Preferred - resumable, parallel, verifies checksums:
+Both need a restart of Ollama (quit the tray app and start it again, or restart the service).
+Ask before setting either; they are persistent.
 
-```bash
-pip install -U "huggingface_hub[cli]"
-hf download unsloth/Qwen3.8-27B-GGUF \
-  Qwen3.8-27B-UD-Q4_K_XL.gguf mmproj-BF16.gguf \
-  --local-dir "E:\AI_models_opensource\qwen3.8-27b"
-```
+- **Model folder** (default: `C:\Users\<user>\.ollama\models`, `~/.ollama/models`, or
+  `/usr/share/ollama/.ollama/models` on Linux). To use the folder from step 1:
 
-Substitute the chosen quant filename. No token is needed; the repo is public.
+  ```powershell
+  [Environment]::SetEnvironmentVariable("OLLAMA_MODELS", "E:\ollama\models", "User")
+  ```
 
-Fallback without Python:
+  On Linux the `ollama` user needs read and write access to it.
+- **Local only:** Ollama also offers cloud models (tags like `:cloud`). If the user wants nothing
+  sent out, disable cloud features with `OLLAMA_NO_CLOUD=1` for the **server** process (or
+  `"disable_ollama_cloud": true` in `~/.ollama/server.json`), restart, and check the log says
+  `Ollama cloud disabled: true`. Setting it in a terminal that talks to an already running server
+  changes nothing.
 
-```bash
-curl -L -C - -o "E:\AI_models_opensource\qwen3.8-27b\Qwen3.8-27B-UD-Q4_K_XL.gguf" \
-  "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-Q4_K_XL.gguf?download=true"
-```
+## 7. Download the chosen model
 
-This is a 17 GB download - tens of minutes on most connections. Run it in the background or in
-a detached process, never in a call that will time out, and **verify the byte size on disk
-against the Hub before registering**. A truncated GGUF fails at `ollama create` with a confusing
-tensor error, and a proxy that returned an HTML error page leaves a 4 KB "model" behind.
-
-## 7. Register the model
-
-Write `Modelfile` next to the GGUF (absolute `FROM` path):
-
-```
-FROM E:\AI_models_opensource\qwen3.8-27b\Qwen3.8-27B-UD-Q4_K_XL.gguf
-PARAMETER num_ctx 32768
-PARAMETER temperature 0.6
-PARAMETER top_p 0.95
-PARAMETER top_k 20
-PARAMETER min_p 0.0
-```
-
-Those sampling values are Qwen's published recommendation for thinking mode - keep them unless
-the user asks otherwise. `num_ctx 32768` is the honest default: Ollama's built-in default is far
-smaller, and a long document will be silently truncated without it. Raise it only if step 8
-still reports 100% GPU.
+Internet is needed only for this step.
 
 ```bash
-ollama create qwen3.8-27b -f "E:\AI_models_opensource\qwen3.8-27b\Modelfile"
+ollama pull qwen3.8:27b                                              # official, from the library
+ollama pull hf.co/orcarouter/Qwen3.8-27B-Uncensored-GGUF:Q4_K_M     # a GGUF from Hugging Face
 ```
 
-This copies ~17 GB into the blob store and takes a few minutes. Running it twice with different
-source files leaves **both** blobs on disk - `ollama list` will not show the orphan. Check the
-store size afterwards if disk is tight.
+Use the exact name from `reference/models.md` or the model page. Large downloads take a while;
+run them where a timeout cannot kill them. Afterwards `ollama list` shows the name to use from now
+on.
 
-## 8. Verify - this step is not optional
+## 8. First run, with the context set
 
 ```bash
-ollama run qwen3.8-27b "Reply with exactly: ok"
+ollama run <name> --think=false
+```
+
+- **Thinking:** Qwen reasons before answering by default. For short tasks `--think=false` answers
+  directly and faster, and can lose precision on hard tasks. Without the flag (the default) answers
+  are slower and usually better. If thinking stays on, give it enough output room (below).
+- **Context window** - how much text the model can keep in view. Set it inside the chat (these are
+  chat commands, not shell commands):
+
+  ```text
+  /set parameter num_ctx 4096
+  /set parameter num_predict 1024
+  ```
+
+  - `num_ctx`: 4096 is plenty for an email or a page. For long documents or reasoning try 16384, if
+    the memory allows (step 9). A context smaller than the text means the model does not see all of
+    it; a context so large that the card fills up makes everything very slow.
+  - `num_predict`: the output limit. With thinking on, the reasoning spends it too and the answer can
+    be cut before it starts - raise it (for example 8192) for long reasoning.
+  - From the API the same goes in `"options": {"num_ctx": 4096}`. For the whole server:
+    `OLLAMA_CONTEXT_LENGTH` (needs a restart). Recent Ollama versions already pick a default by VRAM
+    (about 4k under 24 GiB, 32k from 24 to 48 GiB, 256k above) and a model's Modelfile can set its
+    own; check what is really loaded in step 9.
+
+## 9. Verify - this step is not optional
+
+In a second terminal, while the model is loaded:
+
+```bash
 ollama ps
+nvidia-smi --query-gpu=memory.total,memory.used --format=csv,noheader
 ```
 
-`ollama ps` must show **`100% GPU`** in the PROCESSOR column. Anything else (`48%/52% CPU/GPU`)
-means the model does not fit and every prompt will be slow. Fix in this order:
-
-1. lower `num_ctx` (32768 → 16384 → 8192), re-run `ollama create`;
-2. drop one quant level;
-3. close whatever else holds VRAM (a game, a browser with hardware acceleration, a running
-   render) and re-check `nvidia-smi`.
-
-Then time a real generation and report tokens/second, so the user has a baseline:
+Then time a real answer:
 
 ```bash
-ollama run --verbose qwen3.8-27b "Explain a B-tree in 200 words."
+ollama run <name> --think=false --verbose "Rewrite in two sentences: <a short paragraph>"
 ```
 
-Vision smoke test, if the user has an image handy:
+Pass only if **all three** hold:
+
+1. `ollama ps` shows `100% GPU` in PROCESSOR and the context you set in CONTEXT;
+2. the card is not nearly full - leave headroom (in one measured case, 1.3 GB free was too little and
+   2.6 GB was fine on a 24 GB laptop card);
+3. the `eval rate` is reasonable for the hardware (reference: 26 tokens/s for Qwen3.8-27B Q4_K_S,
+   context 4096, thinking off, RTX 5090 Laptop 24 GB, measured 2026-11-15).
+
+**`100% GPU` alone is not proof.** On Windows the NVIDIA driver can quietly fall back to system
+memory when the card fills up (<https://nvidia.custhelp.com/app/answers/detail/a_id/5490>), and
+Ollama does not see it: on that same laptop, with the context at 32768 and other apps holding about
+5.7 GB of the card, `ollama ps` said `100% GPU` and the model wrote at 1.7 tokens/s - fifteen times
+slower. Dropping the context to 4096 brought it back to 26.
+
+If it fails, fix in this order: lower `num_ctx` (32768 → 16384 → 8192 → 4096); close what else holds
+the card (games, renders, browsers with hardware acceleration) and re-check `nvidia-smi`; go one
+size or one quant down.
+
+## 10. Free the memory when done
+
+```text
+/bye
+```
 
 ```bash
-ollama run qwen3.8-27b "Describe this image. E:\path\to\image.png"
+ollama ps                 # often still loaded: it unloads after ~5 min idle by default
+ollama stop <name>        # unload now
+ollama ps                 # empty = the card is free again
 ```
 
-If it answers as if blind, `mmproj-BF16.gguf` is not registered - it must be in the same folder
-at `ollama create` time; re-run step 7 with both files present.
+The files stay on disk for next time. `ollama rm <name>` deletes them - ask first.
 
-## 9. Hand back the card
+## 11. Hand back the card
 
-Close with a short block the user can paste into their own notes. Nothing else - no recap of
-the steps.
+Close with a short block the user can paste into their notes. Fill in the real numbers you
+measured; nothing else, no recap of the steps.
 
 ```
-Model      qwen3.8-27b  (Qwen3.8-27B UD-Q4_K_XL, vision enabled)
-Files      E:\AI_models_opensource\qwen3.8-27b\Qwen3.8-27B-UD-Q4_K_XL.gguf   16.4 GiB
-           E:\AI_models_opensource\qwen3.8-27b\mmproj-BF16.gguf               0.9 GiB
-           E:\AI_models_opensource\qwen3.8-27b\Modelfile
-Context    32768 tokens      GPU  100%      ~42 tok/s on RTX 5090 Laptop 24 GB
+Model      <name as in ollama list>   (<family, size, quant>, official | modified by <author>)
+License    <license from the model card>
+Memory     card <total> GB, free with the model loaded <measured> GB, context <num_ctx>
+Speed      <measured> tok/s  (thinking off, context <num_ctx>)
 
-Chat       ollama run qwen3.8-27b
-One-shot   ollama run qwen3.8-27b "your prompt"
-Image      ollama run qwen3.8-27b "describe this. C:\path\img.png"
-API        curl http://localhost:11434/api/generate -d '{"model":"qwen3.8-27b","prompt":"hi","stream":false}'
-Python     pip install ollama
-           import ollama; ollama.chat(model="qwen3.8-27b", messages=[{"role":"user","content":"hi"}])
-OpenAI SDK base_url="http://localhost:11434/v1", api_key="ollama"
-Unload     ollama stop qwen3.8-27b        (frees VRAM; auto-unloads after 5 min idle)
-Remove     ollama rm qwen3.8-27b          (deletes the blob copy, not the source GGUF)
+Chat       ollama run <name> --think=false
+           /set parameter num_ctx 4096
+One-shot   ollama run <name> "your prompt"
+API        curl http://localhost:11434/api/generate -d '{"model":"<name>","prompt":"hi","stream":false,"options":{"num_ctx":4096}}'
+OpenAI SDK base_url="http://localhost:11434/v1", api_key="ollama"   (any value; Ollama ignores it)
+Unload     ollama stop <name>        (auto-unloads after ~5 min idle)
+Remove     ollama rm <name>
 ```
-
-Fill in the real numbers you measured. Never write a tokens/second figure you did not time.
 
 ## Known traps
 
-- **`ollama` on Windows opens the desktop app when run with no arguments.** `ollama <args>` is
-  the CLI. Not a failure.
+- **`ollama` on Windows opens the desktop app when run with no arguments.** `ollama <args>` is the
+  CLI. Not a failure.
 - **Ollama must be running** for any command to work. Windows/macOS: the tray app. Linux:
   `systemctl status ollama`. A dead server gives `connection refused` on port 11434.
-- **`num_ctx` is per-model, baked in at `ollama create`.** Changing the Modelfile does nothing
-  until you re-run `ollama create`.
-- **VRAM is shared with everything else on the card.** A 24 GB card running a video render has
-  no room for this model. Check `nvidia-smi` at the moment of the complaint, not from memory.
-- **Do not delete the source GGUF to save space and then expect `ollama` to break** - it will
-  not, the blob is a copy. But you also cannot re-register without re-downloading.
+- **Exiting the chat does not free the card at once.** Use `ollama stop`.
+- **The memory is shared with everything else on the card.** Check `nvidia-smi` at the moment of
+  the complaint, not from memory.
+- **A Modelfile's `num_ctx` is only a default.** Changing the Modelfile does nothing until
+  `ollama create` runs again, but a session (`/set parameter num_ctx`) or a request
+  (`options.num_ctx`) overrides it.
+- **Names differ between installs.** Use the one `ollama list` prints on this machine.

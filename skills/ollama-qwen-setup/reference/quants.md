@@ -1,5 +1,9 @@
 # Qwen3.8-27B GGUF quants — sizes and how to choose
 
+For the advanced route only ([`unsloth-custom-quant.md`](unsloth-custom-quant.md)). Since v2 the
+default is a library tag or a ready GGUF pulled with `ollama pull`; the options are in
+[`models.md`](models.md).
+
 Source repo: <https://huggingface.co/unsloth/Qwen3.8-27B-GGUF> (Apache-2.0).
 Sizes read from the Hub API on **2026-09-03**. The repo is re-quantized occasionally, so
 confirm live sizes before quoting a download; the command is in `SKILL.md` step 3.
@@ -20,9 +24,11 @@ KV cache, measured against `num_ctx`, is roughly:
 | 32768 | ~3.0 GiB |
 | 65536 | ~6.0 GiB |
 
-These are working estimates, not a spec. **`ollama ps` is the ground truth** — it prints the
-real CPU/GPU split for the model as loaded. If it says anything other than `100% GPU`, the
-budget was wrong, whatever the arithmetic said.
+These are working estimates, not a spec. `ollama ps` prints the CPU/GPU split for the model as
+loaded: if it says anything other than `100% GPU`, the budget was wrong, whatever the arithmetic
+said. The reverse does not hold. On Windows the card can overflow into system memory while
+`ollama ps` still says `100% GPU`; also check the free memory and time a generation
+(`SKILL.md`, step 9).
 
 ## Quant table
 
