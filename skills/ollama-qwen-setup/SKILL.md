@@ -1,250 +1,243 @@
 ---
 name: ollama-qwen-setup
-description: Set up a local LLM with Ollama, end to end, sized to the user's machine - ask what it is
-  for, measure VRAM (or unified memory / RAM), offer two or three models that fit (Qwen to think
-  things through, Gemma for quick conversation; official versions first, reduced-refusal versions
-  only on request), install Ollama, download the chosen model, set the context window, verify it
-  really runs fast (not only "100% GPU"), show how to free the memory, and hand back a one-card
-  summary. Use when the user asks to install Ollama, run Qwen or Gemma locally, set up a local or
-  private AI, pick a model or GGUF quant for their hardware, or "use AI without internet".
+description: Instala un modelo de inteligencia artificial local con Ollama, de principio a fin y a la medida de la
+  computadora del usuario - pregunta para qué lo quiere, mide la memoria de la tarjeta gráfica (o la memoria unificada o
+  la RAM), ofrece dos o tres modelos que caben (Qwen para pensar con calma, Gemma para una conversación ágil; primero las
+  versiones oficiales y las versiones con menos rechazos solamente si las pide), instala Ollama, descarga el modelo
+  elegido, ajusta la ventana de contexto, comprueba que de verdad va rápido (no solamente "100% GPU"), enseña a liberar
+  la memoria y entrega una tarjeta resumen. Úsala cuando el usuario pida instalar Ollama, correr Qwen o Gemma en su
+  computadora, tener una IA local o privada, usar IA sin internet, o escoger un modelo o una cuantización GGUF para su
+  equipo. Also use it for the same requests in English.
 ---
 
-# Local LLM with Ollama, sized to your machine (Qwen and Gemma)
+# Un modelo de IA en tu computadora con Ollama (Qwen y Gemma)
 
-Take a machine with nothing installed to a working local model the user can call from a terminal,
-an app or the HTTP API. Eleven steps. Do not skip step 9 - a model that silently overflows the
-card looks like success until the first answer takes minutes.
+Llevar una computadora sin nada instalado a un modelo local que funcione y que el usuario pueda usar desde la terminal,
+desde una aplicación o por la API HTTP. Son once pasos. No te saltes el paso 9: un modelo que desborda la tarjeta sin
+avisar parece que funciona hasta que la primera respuesta tarda minutos.
 
-**Talk to the user in their language.** This skill is in English; the person may not be.
-**Every path you show the user is absolute.** They will copy-paste it.
+**Háblale al usuario en su idioma.** Esta skill está en español; la persona puede hablar otro.
+**Cada ruta que le des al usuario es absoluta.** La va a copiar y pegar.
 
-## Ground rules - ask before you act
+## Reglas básicas: pregunta antes de actuar
 
-- **Ask before** installing Ollama (show the exact command and what it does), before **each**
-  download (model name, source, size), before setting any environment variable, and before
-  removing anything. Never pipe a remote script into a shell without showing it first.
-- **Official sources only:** the Ollama library (`ollama.com/library`) or the model author's page
-  on Hugging Face. Third-party copies are a different file from a different person.
-- **Read the license** on the model card before the user relies on it for work. Qwen's text models
-  used here are Apache-2.0; other families have their own terms.
-- **Do not change driver or system settings** (for example NVIDIA's "CUDA - Sysmem Fallback Policy")
-  unless the user asks for it after you explained the trade-off.
-- Say what you measured and what you only read. Never write a speed you did not time.
+- **Pide permiso antes de** instalar Ollama (enseña el comando exacto y explica qué hace), antes de **cada** descarga
+  (nombre del modelo, de dónde viene y cuánto pesa), antes de crear o cambiar una variable de entorno y antes de borrar
+  cualquier cosa. Nunca mandes un script remoto directo a la terminal sin enseñarlo primero.
+- **Solamente fuentes oficiales:** la biblioteca de Ollama (`ollama.com/library`) o la página del autor del modelo en
+  Hugging Face. Una copia de un tercero es otro archivo, hecho por otra persona.
+- **Lee la licencia** en la ficha del modelo antes de que el usuario lo use para trabajar. Los modelos de texto de Qwen
+  que se usan aquí son Apache-2.0; otras familias tienen sus propias condiciones.
+- **No cambies ajustes del controlador ni del sistema** (por ejemplo «CUDA - Sysmem Fallback Policy» de NVIDIA), salvo
+  que el usuario lo pida después de que le expliques lo que gana y lo que arriesga.
+- Di qué mediste y qué solamente leíste. Nunca escribas una velocidad que no cronometraste.
 
-## 1. Ask what it is for
+## 1. Pregunta para qué lo quiere
 
-Three short questions, then wait for the answers:
+Tres preguntas cortas, y espera las respuestas:
 
-1. **What will you use it for?** Short tasks (rewrite, summarize, translate, extract a list from an
-   email) or long reasoning (analysis, code, long documents)?
-2. **Do you need fewer refusals?** Only if the official model refuses legitimate work (for example
-   anonymised medical surveys or addiction research). Default: official versions. Modified
-   versions are an explicit opt-in (see `reference/models.md`).
-3. **Where should the models live?** Ask for an absolute folder on a drive with room. Do not
-   default it.
+1. **¿Para qué lo vas a usar?** ¿Tareas cortas (reescribir, resumir, traducir, sacar una lista de tareas de un correo) o
+   razonamiento largo (análisis, código, documentos largos)?
+2. **¿Necesitas que se niegue menos?** Solamente si el modelo oficial rechaza trabajo legítimo (por ejemplo, encuestas
+   médicas anónimas o investigación sobre adicciones). Por defecto, versiones oficiales. Las versiones modificadas solo
+   se ofrecen si el usuario las pide (ver `reference/models.md`).
+3. **¿En qué carpeta van los modelos?** Pide una ruta absoluta en un disco con espacio. No la decidas tú.
 
-## 2. Check what is already there
+## 2. Revisa lo que ya está instalado
 
 ```bash
-ollama --version          # Windows fallback: & "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" --version
+ollama --version          # en Windows, si no responde: & "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" --version
 ollama list
 ```
 
-If a suitable model is already installed, say so and ask whether to reuse it. Do not silently
-re-download many gigabytes. Note that names differ: a library download appears as
-`qwen3.8:27b`, a hand-registered one may appear as `qwen3.8-27b:latest`. Always use the name the
-user's own `ollama list` prints.
+Si ya hay un modelo que sirve, dilo y pregunta si lo reutiliza. No vuelvas a descargar muchos gigabytes sin avisar. Los
+nombres cambian según cómo se instaló: uno de la biblioteca aparece como `qwen3.8:27b` y uno registrado a mano puede
+aparecer como `qwen3.8-27b:latest`. Usa siempre el nombre que imprime el `ollama list` del usuario.
 
-## 3. Measure the machine
+## 3. Mide la computadora
 
-NVIDIA (Windows or Linux) - total and **already used** VRAM:
+NVIDIA (Windows o Linux): memoria total de la tarjeta y la que **ya está en uso**:
 
 ```bash
 nvidia-smi --query-gpu=name,memory.total,memory.used --format=csv,noheader
 ```
 
-The plain `nvidia-smi` also lists processes with their full paths; do not paste that part into
-anything public.
+El `nvidia-smi` normal también lista los procesos con sus rutas completas: no pegues esa parte en nada público.
 
 - AMD: `rocm-smi --showmeminfo vram`.
-- Apple Silicon: `sysctl -n hw.memsize` and `system_profiler SPHardwareDataType | grep Chip`. Unified
-  memory: plan for model + context to use at most about 70% of it.
-- No GPU: it still works on the CPU, much slower. Say so and offer only the smallest options.
+- Apple Silicon: `sysctl -n hw.memsize` y `system_profiler SPHardwareDataType | grep Chip`. Memoria unificada: calcula
+  que el modelo más el contexto usen como mucho un 70 % de ella.
+- Sin tarjeta gráfica: también funciona con el procesador, pero mucho más lento. Dilo y ofrece solamente las opciones más
+  pequeñas.
 
-Also read free disk on the target drive. Report one line: device, total memory, memory already in
-use, free disk. Keep RAM, VRAM and unified memory apart when you explain it: they are different
-things.
+Lee también el espacio libre en el disco de destino. Resume en una línea: equipo, memoria total, memoria ya en uso y
+disco libre. Cuando lo expliques, no mezcles la RAM, la VRAM y la memoria unificada: son cosas distintas.
 
-## 4. Offer two or three options, then let the user choose
+## 4. Ofrece dos o tres opciones y deja que el usuario elija
 
-Use `reference/models.md`: rows by VRAM (8, 16, 24 GB), columns by use (think it through = Qwen,
-quick conversation = Gemma), official versions first. For each option give the exact name, the
-download size and one line of trade-off. Then ask which one - never decide alone.
+Usa `reference/models.md`: filas por VRAM (8, 16 y 24 GB), columnas por uso (pensar con calma = Qwen, conversación ágil
+= Gemma), primero las oficiales. Para cada opción da el nombre exacto, el tamaño de la descarga y una línea con lo que
+gana y lo que pierde. Después pregunta cuál quiere: nunca decidas tú solo.
 
-Say out loud:
+Dilo en voz alta:
 
-- **File size is not total memory.** The context and the runtime need room on top, and other
-  applications already hold part of the card.
-- A **tight** option leaves no room for a second model and forces a small context.
-- Below Q3, quality drops sharply on reasoning and code; a smaller model at Q4 usually beats a big
-  one at Q2.
-- If they chose a modified (reduced-refusal) version: it may answer what the official one blocked,
-  and it may also be wrong more often on everything else; downloads are not quality (evidence and
-  caveats in `reference/models.md`).
+- **El tamaño del archivo no es toda la memoria que necesita.** El contexto y el programa ocupan más, y otras
+  aplicaciones ya usan parte de la tarjeta.
+- Una opción **justa** no deja espacio para un segundo modelo y obliga a usar un contexto pequeño.
+- Por debajo de Q3 la calidad cae mucho en razonamiento y en código; un modelo más pequeño en Q4 suele ganarle a uno
+  grande en Q2.
+- Si eligió una versión modificada (con menos rechazos): puede contestar lo que la oficial bloqueaba, y también puede
+  equivocarse más en todo lo demás; las descargas no dicen cuál es mejor (evidencia y límites en `reference/models.md`).
 
-For a specific Unsloth quant with image input, use `reference/unsloth-custom-quant.md` instead of
-steps 7-8.
+Para una cuantización concreta de Unsloth con entrada de imágenes, usa `reference/unsloth-custom-quant.md` en lugar de
+los pasos 7 y 8.
 
-## 5. Install Ollama if missing
+## 5. Instala Ollama si no está
 
-The official commands (<https://ollama.com/download>):
+Los comandos oficiales (<https://ollama.com/download>):
 
-- **Windows (PowerShell):** `irm https://ollama.com/install.ps1 | iex` - or the installer
-  `OllamaSetup.exe` from the same page. It installs in the user's account without administrator
-  rights, to `C:\Users\<user>\AppData\Local\Programs\Ollama\`, and adds itself to PATH: open a
-  **new** terminal before `ollama` resolves.
-- **macOS:** `curl -fsSL https://ollama.com/install.sh | sh` - or `Ollama.dmg` from the same page.
-- **Linux:** `curl -fsSL https://ollama.com/install.sh | sh` (installs a systemd service).
+- **Windows (PowerShell):** `irm https://ollama.com/install.ps1 | iex`, o el instalador `OllamaSetup.exe` de la misma
+  página. Se instala en la cuenta del usuario sin permisos de administrador, en
+  `C:\Users\<usuario>\AppData\Local\Programs\Ollama\`, y se añade al PATH: hay que abrir una terminal **nueva** para que
+  `ollama` funcione.
+- **macOS:** `curl -fsSL https://ollama.com/install.sh | sh`, o `Ollama.dmg` de la misma página.
+- **Linux:** `curl -fsSL https://ollama.com/install.sh | sh` (instala un servicio de systemd).
 
-Show the command, say what it does, and run it only after the user agrees (or let them run it).
-Confirm with `ollama --version` in a fresh terminal.
+Enseña el comando, explica qué hace y córrelo solamente cuando el usuario esté de acuerdo (o deja que lo corra él).
+Comprueba con `ollama --version` en una terminal nueva.
 
-## 6. Optional: model folder and local-only mode
+## 6. Opcional: carpeta de modelos y modo solo local
 
-Both need a restart of Ollama (quit the tray app and start it again, or restart the service).
-Ask before setting either; they are persistent.
+Los dos cambios necesitan reiniciar Ollama (cerrar la aplicación de la bandeja y abrirla otra vez, o reiniciar el
+servicio). Pregunta antes de hacer cualquiera de los dos: son permanentes.
 
-- **Model folder** (default: `C:\Users\<user>\.ollama\models`, `~/.ollama/models`, or
-  `/usr/share/ollama/.ollama/models` on Linux). To use the folder from step 1:
+- **Carpeta de modelos** (por defecto: `C:\Users\<usuario>\.ollama\models`, `~/.ollama/models`, o
+  `/usr/share/ollama/.ollama/models` en Linux). Para usar la carpeta del paso 1:
 
   ```powershell
   [Environment]::SetEnvironmentVariable("OLLAMA_MODELS", "E:\ollama\models", "User")
   ```
 
-  On Linux the `ollama` user needs read and write access to it.
-- **Local only:** Ollama also offers cloud models (tags like `:cloud`). If the user wants nothing
-  sent out, disable cloud features with `OLLAMA_NO_CLOUD=1` for the **server** process (or
-  `"disable_ollama_cloud": true` in `~/.ollama/server.json`), restart, and check the log says
-  `Ollama cloud disabled: true`. Setting it in a terminal that talks to an already running server
-  changes nothing.
+  En Linux, el usuario `ollama` necesita permiso de lectura y escritura en esa carpeta.
+- **Solo local:** Ollama también ofrece modelos en la nube (etiquetas como `:cloud`). Si el usuario no quiere que nada
+  salga de su computadora, desactiva las funciones de nube con `OLLAMA_NO_CLOUD=1` en el proceso del **servidor** (o con
+  `"disable_ollama_cloud": true` en `~/.ollama/server.json`), reinicia y comprueba que el registro dice
+  `Ollama cloud disabled: true`. Ponerla en una terminal que habla con un servidor que ya estaba corriendo no cambia nada.
 
-## 7. Download the chosen model
+## 7. Descarga el modelo elegido
 
-Internet is needed only for this step.
-
-```bash
-ollama pull qwen3.8:27b                                              # official, from the library
-ollama pull hf.co/orcarouter/Qwen3.8-27B-Uncensored-GGUF:Q4_K_M     # a GGUF from Hugging Face
-```
-
-Use the exact name from `reference/models.md` or the model page. Large downloads take a while;
-run them where a timeout cannot kill them. Afterwards `ollama list` shows the name to use from now
-on.
-
-## 8. First run, with the context set
+Solamente este paso necesita internet.
 
 ```bash
-ollama run <name> --think=false
+ollama pull qwen3.8:27b                                              # oficial, de la biblioteca de Ollama
+ollama pull hf.co/orcarouter/Qwen3.8-27B-Uncensored-GGUF:Q4_K_M     # un GGUF de Hugging Face
 ```
 
-- **Thinking:** Qwen reasons before answering by default. For short tasks `--think=false` answers
-  directly and faster, and can lose precision on hard tasks. Without the flag (the default) answers
-  are slower and usually better. If thinking stays on, give it enough output room (below).
-- **Context window** - how much text the model can keep in view. Set it inside the chat (these are
-  chat commands, not shell commands):
+Usa el nombre exacto de `reference/models.md` o de la página del modelo. Las descargas grandes tardan: córrelas donde un
+límite de tiempo no las pueda cortar. Al terminar, `ollama list` enseña el nombre que hay que usar desde ese momento.
+
+## 8. Primera conversación, con el contexto ajustado
+
+```bash
+ollama run <nombre> --think=false
+```
+
+- **Razonamiento:** Qwen piensa antes de contestar por defecto. Para tareas cortas, `--think=false` contesta
+  directamente y más rápido, aunque puede perder precisión en tareas difíciles. Sin esa opción (lo normal) contesta más
+  lento y suele contestar mejor. Si el razonamiento se queda encendido, déjale espacio de salida (abajo).
+- **Ventana de contexto**: cuánto texto puede tener en cuenta el modelo. Se ajusta dentro del chat (son comandos del
+  chat, no de la terminal):
 
   ```text
   /set parameter num_ctx 4096
   /set parameter num_predict 1024
   ```
 
-  - `num_ctx`: 4096 is plenty for an email or a page. For long documents or reasoning try 16384, if
-    the memory allows (step 9). A context smaller than the text means the model does not see all of
-    it; a context so large that the card fills up makes everything very slow.
-  - `num_predict`: the output limit. With thinking on, the reasoning spends it too and the answer can
-    be cut before it starts - raise it (for example 8192) for long reasoning.
-  - From the API the same goes in `"options": {"num_ctx": 4096}`. For the whole server:
-    `OLLAMA_CONTEXT_LENGTH` (needs a restart). Recent Ollama versions already pick a default by VRAM
-    (about 4k under 24 GiB, 32k from 24 to 48 GiB, 256k above) and a model's Modelfile can set its
-    own; check what is really loaded in step 9.
+  - `num_ctx`: 4096 sobra para un correo o una página. Para documentos largos o razonamiento, prueba 16384 si la memoria
+    alcanza (paso 9). Un contexto más pequeño que el texto hace que el modelo no lo vea completo; uno tan grande que
+    llena la tarjeta hace que todo vaya lentísimo.
+  - `num_predict`: el límite de salida. Con el razonamiento encendido, el razonamiento también lo gasta y la respuesta se
+    puede cortar antes de empezar: súbelo (por ejemplo a 8192) para razonamientos largos.
+  - Por la API, lo mismo va en `"options": {"num_ctx": 4096}`. Para todo el servidor: `OLLAMA_CONTEXT_LENGTH` (necesita
+    reiniciar). Las versiones recientes de Ollama ya eligen un valor según la VRAM (unos 4 mil tokens con menos de 24
+    GiB, 32 mil entre 24 y 48 GiB y 256 mil por encima), y el Modelfile de un modelo puede traer el suyo: comprueba en el
+    paso 9 lo que de verdad quedó cargado.
 
-## 9. Verify - this step is not optional
+## 9. Comprueba: este paso no es opcional
 
-In a second terminal, while the model is loaded:
+En una segunda terminal, con el modelo cargado:
 
 ```bash
 ollama ps
 nvidia-smi --query-gpu=memory.total,memory.used --format=csv,noheader
 ```
 
-Then time a real answer:
+Después cronometra una respuesta real:
 
 ```bash
-ollama run <name> --think=false --verbose "Rewrite in two sentences: <a short paragraph>"
+ollama run <nombre> --think=false --verbose "Reescribe en dos frases: <un párrafo corto>"
 ```
 
-Pass only if **all three** hold:
+Pasa solamente si se cumplen **las tres** cosas:
 
-1. `ollama ps` shows `100% GPU` in PROCESSOR and the context you set in CONTEXT;
-2. the card is not nearly full - leave headroom (in one measured case, 1.3 GB free was too little and
-   2.6 GB was fine on a 24 GB laptop card);
-3. the `eval rate` is reasonable for the hardware (reference: 26 tokens/s for Qwen3.8-27B Q4_K_S,
-   context 4096, thinking off, RTX 5090 Laptop 24 GB, measured 2026-11-15).
+1. `ollama ps` dice `100% GPU` en PROCESSOR y el contexto que pusiste en CONTEXT;
+2. la tarjeta no está casi llena: deja margen (en un caso medido, 1.3 GB libres fueron muy poco y 2.6 GB fueron
+   suficientes en una tarjeta de laptop de 24 GB);
+3. la velocidad (`eval rate`) es razonable para el equipo (referencia: 26 tokens/s con Qwen3.8-27B Q4_K_S, contexto
+   4096, razonamiento apagado, RTX 5090 Laptop de 24 GB, medido el 2026-11-15).
 
-**`100% GPU` alone is not proof.** On Windows the NVIDIA driver can quietly fall back to system
-memory when the card fills up (<https://nvidia.custhelp.com/app/answers/detail/a_id/5490>), and
-Ollama does not see it: on that same laptop, with the context at 32768 and other apps holding about
-5.7 GB of the card, `ollama ps` said `100% GPU` and the model wrote at 1.7 tokens/s - fifteen times
-slower. Dropping the context to 4096 brought it back to 26.
+**`100% GPU` por sí solo no prueba nada.** En Windows, el controlador de NVIDIA puede pasar sin avisar a la memoria del
+sistema cuando la tarjeta se llena (<https://nvidia.custhelp.com/app/answers/detail/a_id/5490>), y Ollama no lo ve: en
+esa misma laptop, con el contexto en 32768 y otras aplicaciones ocupando unos 5.7 GB de la tarjeta, `ollama ps` decía
+`100% GPU` y el modelo escribía a 1.7 tokens/s, quince veces más lento. Al bajar el contexto a 4096 volvió a 26.
 
-If it fails, fix in this order: lower `num_ctx` (32768 → 16384 → 8192 → 4096); close what else holds
-the card (games, renders, browsers with hardware acceleration) and re-check `nvidia-smi`; go one
-size or one quant down.
+Si no pasa, corrige en este orden: baja `num_ctx` (32768 → 16384 → 8192 → 4096); cierra lo que esté usando la tarjeta
+(juegos, renders, navegadores con aceleración por hardware) y vuelve a mirar `nvidia-smi`; baja un tamaño o una
+cuantización.
 
-## 10. Free the memory when done
+## 10. Libera la memoria al terminar
 
 ```text
 /bye
 ```
 
 ```bash
-ollama ps                 # often still loaded: it unloads after ~5 min idle by default
-ollama stop <name>        # unload now
-ollama ps                 # empty = the card is free again
+ollama ps                 # muchas veces sigue cargado: se descarga solo tras unos 5 min sin uso
+ollama stop <nombre>      # lo descarga ya
+ollama ps                 # vacío = la tarjeta vuelve a estar libre
 ```
 
-The files stay on disk for next time. `ollama rm <name>` deletes them - ask first.
+Los archivos se quedan en el disco para la próxima vez. `ollama rm <nombre>` los borra: pregunta antes.
 
-## 11. Hand back the card
+## 11. Entrega la tarjeta resumen
 
-Close with a short block the user can paste into their notes. Fill in the real numbers you
-measured; nothing else, no recap of the steps.
+Termina con un bloque corto que el usuario pueda pegar en sus notas. Con los números reales que mediste; nada más, sin
+repetir los pasos.
 
 ```
-Model      <name as in ollama list>   (<family, size, quant>, official | modified by <author>)
-License    <license from the model card>
-Memory     card <total> GB, free with the model loaded <measured> GB, context <num_ctx>
-Speed      <measured> tok/s  (thinking off, context <num_ctx>)
+Modelo     <nombre de ollama list>   (<familia, tamaño, cuantización>, oficial | modificado por <autor>)
+Licencia   <licencia de la ficha del modelo>
+Memoria    tarjeta de <total> GB, libre con el modelo cargado <medido> GB, contexto <num_ctx>
+Velocidad  <medida> tokens/s  (razonamiento apagado, contexto <num_ctx>)
 
-Chat       ollama run <name> --think=false
+Chat       ollama run <nombre> --think=false
            /set parameter num_ctx 4096
-One-shot   ollama run <name> "your prompt"
-API        curl http://localhost:11434/api/generate -d '{"model":"<name>","prompt":"hi","stream":false,"options":{"num_ctx":4096}}'
-OpenAI SDK base_url="http://localhost:11434/v1", api_key="ollama"   (any value; Ollama ignores it)
-Unload     ollama stop <name>        (auto-unloads after ~5 min idle)
-Remove     ollama rm <name>
+Una vez    ollama run <nombre> "tu instrucción"
+API        curl http://localhost:11434/api/generate -d '{"model":"<nombre>","prompt":"hola","stream":false,"options":{"num_ctx":4096}}'
+SDK OpenAI base_url="http://localhost:11434/v1", api_key="ollama"   (cualquier valor; Ollama lo ignora)
+Descargar  ollama stop <nombre>        (se descarga solo tras ~5 min sin uso)
+Borrar     ollama rm <nombre>
 ```
 
-## Known traps
+## Trampas conocidas
 
-- **`ollama` on Windows opens the desktop app when run with no arguments.** `ollama <args>` is the
-  CLI. Not a failure.
-- **Ollama must be running** for any command to work. Windows/macOS: the tray app. Linux:
-  `systemctl status ollama`. A dead server gives `connection refused` on port 11434.
-- **Exiting the chat does not free the card at once.** Use `ollama stop`.
-- **The memory is shared with everything else on the card.** Check `nvidia-smi` at the moment of
-  the complaint, not from memory.
-- **A Modelfile's `num_ctx` is only a default.** Changing the Modelfile does nothing until
-  `ollama create` runs again, but a session (`/set parameter num_ctx`) or a request
-  (`options.num_ctx`) overrides it.
-- **Names differ between installs.** Use the one `ollama list` prints on this machine.
+- **En Windows, `ollama` sin argumentos abre la aplicación de escritorio.** `ollama <argumentos>` es la terminal. No es
+  un error.
+- **Ollama tiene que estar corriendo** para que funcione cualquier comando. Windows y macOS: la aplicación de la bandeja.
+  Linux: `systemctl status ollama`. Con el servidor apagado sale `connection refused` en el puerto 11434.
+- **Salir del chat no libera la tarjeta en ese momento.** Usa `ollama stop`.
+- **La memoria de la tarjeta se comparte con todo lo demás.** Revisa `nvidia-smi` en el momento del problema, no de
+  memoria.
+- **El `num_ctx` de un Modelfile es solamente un valor por defecto.** Cambiar el Modelfile no hace nada hasta volver a
+  correr `ollama create`, pero una sesión (`/set parameter num_ctx`) o una petición (`options.num_ctx`) lo cambian.
+- **Los nombres cambian entre instalaciones.** Usa el que imprime `ollama list` en esa computadora.
